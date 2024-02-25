@@ -107,16 +107,13 @@ impl Model {
         self.potential_energy_history.push_back(potential_energy);
 
         let kinetic_line = Line::new(self.kinetic_energy_history.iter().enumerate().map(|(i, y)| {
-            let x = i as f64 * 0.01;
-            [x, *y as f64]
+            [i as f64 * 0.01, *y as f64]
         }).collect::<Vec<[f64; 2]>>());
         let potential_line = Line::new(self.potential_energy_history.iter().enumerate().map(|(i, y)| {
-            let x = i as f64 * 0.01;
-            [x, *y as f64]
+            [i as f64 * 0.01, *y as f64]
         }).collect::<Vec<[f64; 2]>>());
         let summed_line = Line::new(self.kinetic_energy_history.iter().enumerate().zip(self.potential_energy_history.iter()).map(|((i, y1), y2)| {
-            let x = i as f64 * 0.01;
-            [x, (*y1 + *y2) as f64]
+            [i as f64 * 0.01, (*y1 + *y2) as f64]
         }).collect::<Vec<[f64; 2]>>());
 
         self.egui.set_elapsed_time(update.since_start);
@@ -144,5 +141,47 @@ impl Model {
                 plot_ui.line(summed_line);
             })
         });
+    }
+
+    pub fn draw(&self, draw: &Draw) {
+        let origin = self.origin;
+        let x1 = origin.x + self.r1 * -self.a1.sin();
+        let y1 = origin.y + self.r1 * -self.a1.cos();
+        let x2 = x1 + self.r2 * -self.a2.sin();
+        let y2 = y1 + self.r2 * -self.a2.cos();
+        let color = TEAL;
+    
+        draw.ellipse()
+            .x_y(x1, y1)
+            .radius(self.m1.sqrt())
+            .color(color)
+            .z(3.0);
+        draw.ellipse()
+            .x_y(x2, y2)
+            .radius(self.m2.sqrt())
+            .color(color)
+            .z(3.0);
+        draw.line()
+            .start(origin)
+            .end(pt2(x1, y1))
+            .color(color)
+            .weight(3.0)
+            .z(2.0);
+        draw.line()
+            .start(pt2(x1, y1))
+            .end(pt2(x2, y2))
+            .color(color)
+            .weight(3.0)
+            .z(2.0);
+    
+        draw.polyline()
+            .weight(1.0)
+            .z(1.0)
+            .points_colored(
+                self.trace
+                    .iter()
+                    .enumerate()
+                    .map(|(i,p)| (*p, lin_srgba(1.0, 1.0, 1.0, 1.0 - (self.trace.len() - i) as f32 / self.trace.len() as f32)))
+            );
     }
 }

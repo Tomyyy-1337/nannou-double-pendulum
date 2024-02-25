@@ -55,54 +55,10 @@ fn view(app: &App, model: &Model, frame: Frame) {
     
     draw.background().color(BLACK);
 
-    draw_model(&draw, model);
+    model.draw(&draw);
     
     draw.to_frame(app, &frame).unwrap();
     model.egui.draw_to_frame(&frame).unwrap();
-}
-
-
-fn draw_model(draw: &Draw, model: &Model) {
-    let origin = model.origin;
-    let x1 = origin.x + model.r1 * -model.a1.sin();
-    let y1 = origin.y + model.r1 * -model.a1.cos();
-    let x2 = x1 + model.r2 * -model.a2.sin();
-    let y2 = y1 + model.r2 * -model.a2.cos();
-    let color = TEAL;
-
-    draw.ellipse()
-        .x_y(x1, y1)
-        .radius(model.m1.sqrt())
-        .color(color)
-        .z(3.0);
-    draw.ellipse()
-        .x_y(x2, y2)
-        .radius(model.m2.sqrt())
-        .color(color)
-        .z(3.0);
-    draw.line()
-        .start(origin)
-        .end(pt2(x1, y1))
-        .color(color)
-        .weight(3.0)
-        .z(2.0);
-    draw.line()
-        .start(pt2(x1, y1))
-        .end(pt2(x2, y2))
-        .color(color)
-        .weight(3.0)
-        .z(2.0);
-
-    draw.polyline()
-        .weight(1.0)
-        .z(1.0)
-        .points_colored(
-            model.trace
-                .iter()
-                .enumerate()
-                .map(|(i,p)| (*p, lin_srgba(1.0, 1.0, 1.0, 1.0 - (model.trace.len() - i) as f32 / model.trace.len() as f32)))
-        );
-
 }
 
 fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event::WindowEvent) {
