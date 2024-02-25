@@ -10,8 +10,8 @@ fn main() {
 }
 
 fn model(app: &App) -> Model {
-    let width = 1000;
-    let height = 700;
+    let width = 1200;
+    let height = 800;
     let window_id = app
         .new_window()
         .size(width, height)
@@ -47,7 +47,6 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.update_physics(update, 100);
         model.upate_trace();
     }
-
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {

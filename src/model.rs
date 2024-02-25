@@ -19,8 +19,11 @@ pub struct Model {
     pub a2_v: f32,
     pub g: f32,
     pub trace: VecDeque<Point2>,
-    pub potential_energy_history: VecDeque<f32>,
-    pub kinetic_energy_history: VecDeque<f32>,
+    pub potential_energy_history_inner: VecDeque<f32>,
+    pub potential_energy_history_outer: VecDeque<f32>,
+    pub kinetic_energy_history_inner: VecDeque<f32>,
+    pub kinetic_energy_history_outer: VecDeque<f32>,
+    pub frame_count: u64,
 }
 
 impl Model {
@@ -30,7 +33,7 @@ impl Model {
             egui: Egui::from_window(&window),
             window_width: width,
             window_height: height,
-            origin: pt2(0.0, 200.0),
+            origin: pt2(100.0, 200.0),
             r1: 250.0,
             r2: 240.0,
             m1: 80.0,
@@ -41,8 +44,11 @@ impl Model {
             a2_v: 0.0,
             g: 10.0,
             trace: VecDeque::with_capacity(5010),
-            potential_energy_history: VecDeque::with_capacity(2010),
-            kinetic_energy_history: VecDeque::with_capacity(2010),
+            potential_energy_history_inner: VecDeque::with_capacity(2010),
+            potential_energy_history_outer: VecDeque::with_capacity(2010),
+            kinetic_energy_history_inner: VecDeque::with_capacity(2010),
+            kinetic_energy_history_outer: VecDeque::with_capacity(2010),
+            frame_count: 0,
         }
     }
 
@@ -79,43 +85,51 @@ impl Model {
             self.a2 += self.a2_v * delta_time;
         }
     }
-
+    
     pub fn upate_trace(&mut self) {
         let x1 = self.origin.x + self.r1 * -self.a1.sin() as f32;
         let y1 = self.origin.y + self.r1 * -self.a1.cos() as f32;
         let x2 = x1 + self.r2 * -self.a2.sin() as f32;
         let y2 = y1 + self.r2 * -self.a2.cos() as f32;
-
+        
         if self.trace.len() > 5000 {
             self.trace.pop_front();
         }
         self.trace.push_back(pt2(x2, y2));
     }
-
+    
     pub fn update_gui(&mut self, update: Update) {
-        if self.kinetic_energy_history.len() >= 2000 {
-            self.kinetic_energy_history.pop_front();
+        self.frame_count += 1;
+        if self.kinetic_energy_history_inner.len() > 2000 {
+            self.kinetic_energy_history_inner.pop_front();
         }
-        if self.potential_energy_history.len() >= 2000 {
-            self.potential_energy_history.pop_front();
+        if self.kinetic_energy_history_outer.len() > 2000 {
+            self.kinetic_energy_history_outer.pop_front();
         }
-        let kinetic_energy = 0.5 * self.m1 * self.r1.powi(2) * self.a1_v.powi(2) + 0.5 * self.m2 * (self.r1.powi(2) * self.a1_v.powi(2) + self.r2.powi(2) * self.a2_v.powi(2) + 2.0 * self.r1 * self.r2 * self.a1_v * self.a2_v * (self.a1 - self.a2).cos());
-        let potential_energy = self.m1 * self.g * self.r1 * (1.0 - self.a1.cos()) + self.m2 * self.g * (self.r1 * (1.0 - self.a1.cos()) + self.r2 * (1.0 - self.a2.cos()));
-        let total_energy = kinetic_energy + potential_energy;
+        if self.potential_energy_history_inner.len() > 2000 {
+            self.potential_energy_history_inner.pop_front();
+        }
+        if self.potential_energy_history_outer.len() > 2000 {
+            self.potential_energy_history_outer.pop_front();
+        }
 
-        self.kinetic_energy_history.push_back(kinetic_energy);
-        self.potential_energy_history.push_back(potential_energy);
+        let kinetic_energy_inner = 0.5 * self.m1 * self.r1.powi(2) * self.a1_v.powi(2);
+        let kinetic_energy_outer = 0.5 * self.m2 * (self.r1.powi(2) * self.a1_v.powi(2) + self.r2.powi(2) * self.a2_v.powi(2) + 2.0 * self.r1 * self.r2 * self.a1_v * self.a2_v * (self.a1 - self.a2).cos());
+        let potential_energy_inner = self.m1 * self.g * self.r1 * (1.0 - self.a1.cos());
+        let potential_energy_outer = self.m2 * self.g * (self.r1 * (1.0 - self.a1.cos()) + self.r2 * (1.0 - self.a2.cos()));
+        
+        self.kinetic_energy_history_inner.push_back(kinetic_energy_inner);
+        self.kinetic_energy_history_outer.push_back(kinetic_energy_outer);
+        self.potential_energy_history_inner.push_back(potential_energy_inner);
+        self.potential_energy_history_outer.push_back(potential_energy_outer);
 
-        let kinetic_line = Line::new(self.kinetic_energy_history.iter().enumerate().map(|(i, y)| {
-            [i as f64 * 0.01, *y as f64]
-        }).collect::<Vec<[f64; 2]>>());
-        let potential_line = Line::new(self.potential_energy_history.iter().enumerate().map(|(i, y)| {
-            [i as f64 * 0.01, *y as f64]
-        }).collect::<Vec<[f64; 2]>>());
-        let summed_line = Line::new(self.kinetic_energy_history.iter().enumerate().zip(self.potential_energy_history.iter()).map(|((i, y1), y2)| {
-            [i as f64 * 0.01, (*y1 + *y2) as f64]
-        }).collect::<Vec<[f64; 2]>>());
-
+        let kinetic_line = Line::new(self.kinetic_energy_history_inner.iter().zip(self.kinetic_energy_history_outer.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let potential_line = Line::new(self.potential_energy_history_inner.iter().zip(self.potential_energy_history_outer.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let inner_energy_line = Line::new(self.kinetic_energy_history_inner.iter().zip(self.potential_energy_history_inner.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let outer_energy_line = Line::new(self.kinetic_energy_history_outer.iter().zip(self.potential_energy_history_outer.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let summed_line = Line::new(self.kinetic_energy_history_inner.iter().zip(self.kinetic_energy_history_outer.iter()).zip(self.potential_energy_history_inner.iter().zip(self.potential_energy_history_outer.iter())).enumerate().map(|(i, ((a,b), (c,d)))| [(i as u64 + self.frame_count) as f64, (*a + *b + *c + *d) as f64]).collect::<Vec<[f64; 2]>>());
+        let summed_line_2 = Line::new(self.kinetic_energy_history_inner.iter().zip(self.kinetic_energy_history_outer.iter()).zip(self.potential_energy_history_inner.iter().zip(self.potential_energy_history_outer.iter())).enumerate().map(|(i, ((a,b), (c,d)))| [(i as u64 + self.frame_count) as f64, (*a + *b + *c + *d) as f64]).collect::<Vec<[f64; 2]>>());
+        
         self.egui.set_elapsed_time(update.since_start);
         let ctx = self.egui.begin_frame();
         egui::Window::new("Settings").show(&ctx, |ui| {
@@ -133,13 +147,16 @@ impl Model {
             ui.add(egui::Slider::new(&mut self.origin.y, -(self.window_height as f32) / 2.0..=self.window_height as f32 / 2.0));
         });    
         egui::Window::new("Plot").show(&ctx, |ui|{
-            ui.label(format!("Kinetic Energy: {:.2}, Potential Energy: {:.2}", kinetic_energy, potential_energy));
-            ui.label(format!("Total Energy: {:.2}", total_energy));
-            Plot::new("my_plot").view_aspect(2.0).show(ui, |plot_ui| {
+            Plot::new("Kinetic and Potential Energy").view_aspect(2.0).show(ui, |plot_ui| {
                 plot_ui.line(kinetic_line);
                 plot_ui.line(potential_line);
                 plot_ui.line(summed_line);
-            })
+            });
+            Plot::new("Energy of inner and outer Mass").view_aspect(2.0).show(ui, |plot_ui| {
+                plot_ui.line(inner_energy_line);
+                plot_ui.line(outer_energy_line);
+                plot_ui.line(summed_line_2);
+            });
         });
     }
 
