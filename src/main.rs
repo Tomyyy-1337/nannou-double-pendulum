@@ -44,7 +44,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
     model.update_gui(update);
 
     if model.running {
-        model.update_physics(update, 100);
+        model.update_physics(update, 1000);
         model.upate_trace();
     }
 }
