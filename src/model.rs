@@ -1,55 +1,60 @@
 use std::collections::VecDeque;
 use nannou::prelude::*;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use nannou_egui::{self, egui, Egui};
+use egui_plot::{Line, Plot};
 
-#[derive(Debug, Clone)]
-pub struct Pendumlum {
+pub struct Model {
+    pub running: bool,
+    pub egui: Egui,
+    pub window_width: u32,
+    pub window_height: u32,
     pub origin: Point2,
-    pub r1: f64,
-    pub r2: f64,
-    pub m1: f64,
-    pub m2: f64,
-    pub a1: f64,
-    pub a2: f64,
-    pub a1_v: f64,
-    pub a2_v: f64,
-    pub g: f64,
+    pub r1: f32,
+    pub r2: f32,
+    pub m1: f32,
+    pub m2: f32,
+    pub a1: f32,
+    pub a2: f32,
+    pub a1_v: f32,
+    pub a2_v: f32,
+    pub g: f32,
     pub trace: VecDeque<Point2>,
-    pub color_r: f64,
-    pub color_g: f64,
-    pub color_b: f64,
-    offset: f64,
+    pub potential_energy_history_inner: VecDeque<f32>,
+    pub potential_energy_history_outer: VecDeque<f32>,
+    pub kinetic_energy_history_inner: VecDeque<f32>,
+    pub kinetic_energy_history_outer: VecDeque<f32>,
+    pub frame_count: u64,
 }
 
-impl Pendumlum {
-    pub fn new(r: f64, g: f64, b: f64, offset: f64) -> Pendumlum {
-        Pendumlum {
-            origin: pt2(0.0, 0.0),
-            r1: 200.0,
-            r2: 300.0,
-            m1: 200.0,
-            m2: 200.0,
-            a1: PI_F64 + 1.0,
-            a2: PI_F64 + 1.0 + offset,
+impl Model {
+    pub fn new(window: &std::cell::Ref<'_, Window>, width: u32, height: u32) -> Self {
+        Model {
+            running: true,
+            egui: Egui::from_window(&window),
+            window_width: width,
+            window_height: height,
+            origin: pt2(100.0, 200.0),
+            r1: 250.0,
+            r2: 240.0,
+            m1: 80.0,
+            m2: 40.0,
+            a1: PI / 2.0 + 0.1,
+            a2: PI / 2.0 + 0.2,
             a1_v: 0.0,
             a2_v: 0.0,
-            g: 4.0,
-            trace: VecDeque::new(),
-            color_r: r,
-            color_b: b,
-            color_g: g,
-            offset,
+            g: 10.0,
+            trace: VecDeque::with_capacity(1010),
+            potential_energy_history_inner: VecDeque::with_capacity(510),
+            potential_energy_history_outer: VecDeque::with_capacity(510),
+            kinetic_energy_history_inner: VecDeque::with_capacity(510),
+            kinetic_energy_history_outer: VecDeque::with_capacity(510),
+            frame_count: 0,
         }
     }
 
-    pub fn reset(&mut self, r1: f64, r2: f64, m1: f64, m2: f64, a1: f64, a2: f64) {
-        self.r1 = r1;
-        self.r2 = r2;
-        self.m1 = m1;
-        self.m2 = m2;
-
-        self.a1 = a1;
-        self.a2 = a2 + self.offset;
+    pub fn reset(&mut self) {
+        self.a1 = PI / 2.0 + 0.1;
+        self.a2 = PI / 2.0 + 0.2;
         self.a1_v = 0.0;
         self.a2_v = 0.0;
         self.trace.clear();
@@ -57,7 +62,7 @@ impl Pendumlum {
 
     pub fn update_physics(&mut self, update: Update, steps_per_frame: u32) {
         for _ in 0..steps_per_frame {
-            let delta_time = update.since_last.secs() as f64 * 10.0 / steps_per_frame as f64;
+            let delta_time = update.since_last.secs() as f32 * 10.0 / steps_per_frame as f32;
     
             let num1 = -self.g * (2.0 * self.m1 + self.m2) * self.a1.sin();
             let num2 = -self.m2 * self.g * (self.a1 - 2.0 * self.a2).sin();
@@ -80,102 +85,120 @@ impl Pendumlum {
             self.a2 += self.a2_v * delta_time;
         }
     }
-
+    
     pub fn upate_trace(&mut self) {
-        let x1 = self.r1 * -self.a1.sin() as f64;
-        let y1 = self.r1 * -self.a1.cos() as f64;
-        let x2 = x1 + self.r2 * -self.a2.sin() as f64;
-        let y2 = y1 + self.r2 * -self.a2.cos() as f64;
+        let x1 = self.r1 * -self.a1.sin() as f32;
+        let y1 = self.r1 * -self.a1.cos() as f32;
+        let x2 = x1 + self.r2 * -self.a2.sin() as f32;
+        let y2 = y1 + self.r2 * -self.a2.cos() as f32;
         
-        if self.trace.len() > 2 {
+        if self.trace.len() > 1000 {
             self.trace.pop_front();
         }
-        self.trace.push_back(pt2(x2 as f32, y2 as f32));
-
-    }
-
-    pub fn draw(&self, draw: &Draw) { 
-        if self.trace.len() < 2 {
-            return;
-        }
-        draw.line()
-            .weight(1.0)
-            .z(1.0)
-            .color(lin_srgba(self.color_r, self.color_g, self.color_b, 0.07))
-            .start(self.trace[0])
-            .end(self.trace[1]);
-    }
-
-
-
-}
-
-pub struct Model {
-    pub running: bool,
-    pub window_width: u32,
-    pub window_height: u32,
-    pub frame_count: u64,
-    pub num_pendulums: u32,
-    pub pendulums: Vec<Pendumlum>,
-    pub reset_timer: u64,
-}
-
-impl Model {
-    pub fn new(width: u32, height: u32) -> Self {
-        let num_pendulums = 7000;
-        Model {
-            num_pendulums,
-            running: true,
-            window_width: width,
-            window_height: height,
-            frame_count: 0,
-            reset_timer: 0,
-            pendulums: (1..=num_pendulums).map(|i| {
-                let hue = (i as f64 / num_pendulums as f64) * 2.0 * PI_F64;  
-                let r = hue.sin() * 0.5 + 0.5;
-                let g = hue.cos() * 0.5 + 0.5;
-                let b = (hue + PI_F64 / 2.0).cos() * 0.5 + 0.5;
-                let offset = (i as f64 / num_pendulums as f64) * 0.001;
-                Pendumlum::new(r,g,b, offset)
-            }).collect(),
+        if self.frame_count % 2 == 0 {
+            self.trace.push_back(pt2(x2, y2));
         }
     }
+    
+    pub fn update_gui(&mut self, update: Update) {
+        self.frame_count += 1;
+        if self.kinetic_energy_history_inner.len() > 500 {
+            self.kinetic_energy_history_inner.pop_front();
+            self.potential_energy_history_outer.pop_front();
+            self.kinetic_energy_history_outer.pop_front();
+            self.potential_energy_history_inner.pop_front();
+        }
 
-    pub fn chaos_factor(&self) -> f64 {
-        let first_a1 = self.pendulums[0].a1;
-        let last_a1 = self.pendulums[self.num_pendulums as usize - 1].a1;
-        let delta = (last_a1 - first_a1).abs();
-        delta / (PI_F64)
-    }
+        let kinetic_energy_inner = 0.5 * self.m1 * self.r1.powi(2) * self.a1_v.powi(2);
+        let kinetic_energy_outer = 0.5 * self.m2 * (self.r1.powi(2) * self.a1_v.powi(2) + self.r2.powi(2) * self.a2_v.powi(2) + 2.0 * self.r1 * self.r2 * self.a1_v * self.a2_v * (self.a1 - self.a2).cos());
+        let potential_energy_inner = self.m1 * self.g * self.r1 * (1.0 - self.a1.cos());
+        let potential_energy_outer = self.m2 * self.g * (self.r1 * (1.0 - self.a1.cos()) + self.r2 * (1.0 - self.a2.cos()));
+        if self.frame_count % 2 == 0 {
+            self.kinetic_energy_history_inner.push_back(kinetic_energy_inner);
+            self.kinetic_energy_history_outer.push_back(kinetic_energy_outer);
+            self.potential_energy_history_inner.push_back(potential_energy_inner);
+            self.potential_energy_history_outer.push_back(potential_energy_outer);
+        }
 
-    pub fn reset(&mut self) {
-        let r1 = random_range(100.0, 400.0);
-        let r2 = 500.0 - r1;
-
-        let m1 = random_range(100.0, 400.0);
-        let m2 = random_range(100.0, 400.0);
-
-        let a1 = PI_F64 + random_range(-1.5, 1.5);
-        let a2 = PI_F64 + random_range(-1.5, 1.5);
+        let kinetic_line = Line::new(self.kinetic_energy_history_inner.iter().zip(self.kinetic_energy_history_outer.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count / 2) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let potential_line = Line::new(self.potential_energy_history_inner.iter().zip(self.potential_energy_history_outer.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count / 2) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let inner_energy_line = Line::new(self.kinetic_energy_history_inner.iter().zip(self.potential_energy_history_inner.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count / 2) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let outer_energy_line = Line::new(self.kinetic_energy_history_outer.iter().zip(self.potential_energy_history_outer.iter()).enumerate().map(|(i, (a,b))| [(i as u64 + self.frame_count / 2) as f64, (*a + *b) as f64]).collect::<Vec<[f64; 2]>>());
+        let summed_line = Line::new(self.kinetic_energy_history_inner.iter().zip(self.kinetic_energy_history_outer.iter()).zip(self.potential_energy_history_inner.iter().zip(self.potential_energy_history_outer.iter())).enumerate().map(|(i, ((a,b), (c,d)))| [(i as u64 + self.frame_count / 2) as f64, (*a + *b + *c + *d) as f64]).collect::<Vec<[f64; 2]>>());
+        let summed_line_2 = Line::new(self.kinetic_energy_history_inner.iter().zip(self.kinetic_energy_history_outer.iter()).zip(self.potential_energy_history_inner.iter().zip(self.potential_energy_history_outer.iter())).enumerate().map(|(i, ((a,b), (c,d)))| [(i as u64 + self.frame_count / 2) as f64, (*a + *b + *c + *d) as f64]).collect::<Vec<[f64; 2]>>());
         
-        self.frame_count = 0;
-        self.pendulums.iter_mut().for_each(|p| p.reset(r1,r2,m1,m2,a1,a2));
-        self.reset_timer = 0;
-    }
-
-    pub fn clear_trace(&mut self) {
-        self.frame_count = 0;
-        self.pendulums.iter_mut().for_each(|p| p.trace.clear());
-    }
-
-    pub fn update_physics(&mut self, update: Update, steps_per_frame: u32) {
-        self.pendulums.par_iter_mut().for_each(|p| {
-            p.update_physics(update, steps_per_frame);
-            p.upate_trace();
+        self.egui.set_elapsed_time(update.since_start);
+        let ctx = self.egui.begin_frame();
+        egui::Window::new("Settings").show(&ctx, |ui| {
+            ui.label("Länge des inneren Pendels:");
+            ui.add(egui::Slider::new(&mut self.r1, 100.0..=500.0));
+            ui.label("Länge des äußeren Pendels:");
+            ui.add(egui::Slider::new(&mut self.r2, 100.0..=500.0));
+            ui.label("Inneres Gewicht:");
+            ui.add(egui::Slider::new(&mut self.m1, 10.0..=100.0));
+            ui.label("Äußeres Gewicht:");
+            ui.add(egui::Slider::new(&mut self.m2, 10.0..=100.0));
+            ui.label("Origin x:");
+            ui.add(egui::Slider::new(&mut self.origin.x, -(self.window_width as f32) / 2.0..=self.window_width as f32 / 2.0));
+            ui.label("Origin y:");
+            ui.add(egui::Slider::new(&mut self.origin.y, -(self.window_height as f32) / 2.0..=self.window_height as f32 / 2.0));
+        });    
+        egui::Window::new("Plot").show(&ctx, |ui|{
+            ui.label(format!("Kinetic Energy: {}", kinetic_energy_inner + kinetic_energy_outer));
+            ui.label(format!("Potential Energy: {}", potential_energy_inner + potential_energy_outer));
+            Plot::new("Kinetic and Potential Energy").view_aspect(2.0).show(ui, |plot_ui| {
+                plot_ui.line(kinetic_line);
+                plot_ui.line(potential_line);
+                plot_ui.line(summed_line);
+            });
+            ui.label(format!("Energy of inner mass: {}", kinetic_energy_inner + potential_energy_inner));
+            ui.label(format!("Energy of outer mass: {}", kinetic_energy_outer + potential_energy_outer));
+            Plot::new("Energy of inner and outer Mass").view_aspect(2.0).show(ui, |plot_ui| {
+                plot_ui.line(inner_energy_line);
+                plot_ui.line(outer_energy_line);
+                plot_ui.line(summed_line_2);
+            });
         });
     }
 
     pub fn draw(&self, draw: &Draw) {
-        self.pendulums.iter().for_each(|p| p.draw(draw));
-    }        
+        let x1 = self.origin.x + self.r1 * -self.a1.sin();
+        let y1 = self.origin.y + self.r1 * -self.a1.cos();
+        let x2 = x1 + self.r2 * -self.a2.sin();
+        let y2 = y1 + self.r2 * -self.a2.cos();
+        let color = TEAL;
+    
+        draw.ellipse()
+            .x_y(x1, y1)
+            .radius(self.m1.sqrt())
+            .color(color)
+            .z(3.0);
+        draw.ellipse()
+            .x_y(x2, y2)
+            .radius(self.m2.sqrt())
+            .color(color)
+            .z(3.0);
+        draw.line()
+            .start(self.origin)
+            .end(pt2(x1, y1))
+            .color(color)
+            .weight(3.0)
+            .z(2.0);
+        draw.line()
+            .start(pt2(x1, y1))
+            .end(pt2(x2, y2))
+            .color(color)
+            .weight(3.0)
+            .z(2.0);
+    
+        draw.polyline()
+            .weight(1.0)
+            .z(1.0)
+            .points_colored(
+                self.trace
+                    .iter()
+                    .enumerate()
+                    .map(|(i,p)| (pt2(p.x + self.origin.x, p.y + self.origin.y), lin_srgba(1.0, 1.0, 1.0, 1.0 - (self.trace.len() - i) as f32 / self.trace.len() as f32)))
+            );
+    }
 }
